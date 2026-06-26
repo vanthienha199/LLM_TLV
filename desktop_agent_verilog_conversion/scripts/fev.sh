@@ -101,17 +101,7 @@ function set_status() {
 # Copies whatever artifacts are present and is safe to call repeatedly for the
 # same directory (success refreshes the directory recorded on incremental pass).
 function record_history() {
-  mkdir -p "${NEXT_HISTORY_DIR}"
-  rm -f history/latest
-  ln -s "${NEXT_HISTORY_NAME}" history/latest
-  [ -f config.json ] && cp config.json "${NEXT_HISTORY_DIR}"
-  [ -f wip.tlv ] && cp wip.tlv "${NEXT_HISTORY_DIR}"
-  rm -f "${NEXT_HISTORY_DIR}/feved.tlv"
-  [ -f feved.tlv ] && cp feved.tlv "${NEXT_HISTORY_DIR}"
-  [ -f fev.eqy ] && cp fev.eqy "${NEXT_HISTORY_DIR}"
-  [ -f status.json ] && cp status.json "${NEXT_HISTORY_DIR}"
-  [ -f tracker.md ] && cp tracker.md "${NEXT_HISTORY_DIR}"
-  "${script_dir}/get_task.py" current > "${NEXT_HISTORY_DIR}/task.md" 2>/dev/null || true
+  "${script_dir}/record_history.sh" "${NEXT_HISTORY_DIR}" > /dev/null
 }
 
 # True if the previous history checkpoint recorded a passing (terminal) fev.sh
