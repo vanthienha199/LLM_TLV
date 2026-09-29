@@ -2,8 +2,11 @@
 
 # Pre-FEV gate for the Introduce TLV Scope task: cross-check every full-FEV
 # match section against the mechanical enumeration before spending a FEV run.
-# Exit 2 from the checker means it could not run (missing tool, elaboration
-# failure); that is no verdict, so FEV proceeds as before.
+# Exit 1 from the checker is a verdict on the edit: a match-line disagreement,
+# or a wip.tlv that SandPiper refuses to compile (the checker prints the
+# compiler's message). Exit 2 means the check itself could not run (missing
+# tool, compile service unreachable, elaboration failure); that is no
+# verdict, so FEV proceeds as before.
 
 # Usage: Introduce_TLV_Scope.sh <module-dir>
 

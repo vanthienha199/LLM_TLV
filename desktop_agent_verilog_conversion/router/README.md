@@ -61,7 +61,11 @@ not references, so an edit there must be mirrored here.
   replays each fev_full*.eqy's read and script commands through yosys,
   enumerates both sides' signals, and fails fast on match lines that name
   nonexistent signals or leave gold state unmatched, so a wrong match list
-  costs no FEV run.
+  costs no FEV run. A wip.tlv that SandPiper refuses to compile fails the
+  same gate with the compiler's diagnostic as the feedback (a compile error
+  in the worker's own edit is a verdict on the edit); only a checker that
+  could not run at all (missing tool, compile service unreachable) is "no
+  verdict", and FEV proceeds.
 
 ## Edit format
 
