@@ -50,20 +50,52 @@ Transform:
    name: `m5+<module_name>(/_top, /<module_name>)`.
 5. Every reference from outside the macro to a signal the macro defines
    (the including context, and the module wrapper's interface
-   connections) reaches into the scope, e.g. `|default$rgnt` becomes
-   `/<module_name>|default$rgnt`.
+   connections) reaches into the scope by a path SandPiper can resolve
+   from where the reference is written. A scope path resolves relative
+   to the current context: SandPiper looks for its first element as a
+   child or an ancestor of the scope the reference sits in, and nothing
+   else. The macro's scope is a child of /top (the instantiation site),
+   and the wrapper's output connections sit inside the wrapper's own
+   `|default`, so the two are siblings under /top and the reference must
+   climb to the common ancestor: `/top/<module_name>|default<>0$sig`.
+   Writing `/<module_name>|default<>0$sig` from inside the wrapper's
+   `|default` is a BAD-SCOPE error (`Scope "/<module_name>" could not be
+   found as a child or ancestor of scope "|default"`). The output
+   connection block therefore changes from
+
+      |default
+         @0
+            *o_ready = $o_ready;
+            *o_wdata = $o_wdata;
+
+   to
+
+      |default
+         @0
+            *o_ready = /top/<module_name>|default<>0$o_ready;
+            *o_wdata = /top/<module_name>|default<>0$o_wdata;
+
+   with `<>0` at the END of the path, just before the `$` (the alignment
+   marker attaches to the whole path, never to a scope in the middle of
+   it). The same rule applies in the other direction: from inside the
+   macro, a wrapper-side signal is `/_top|default<>0$sig`, since /_top is
+   an ancestor of the macro's scope.
 
 Introducing the scope renames every signal SandPiper generates from the
 macro, so the FEV match lines must follow: in each fev*.eqy match
 section, add the scope to the path of every gate-side name (TL-Verilog
 syntax) for a signal now under the scope (e.g. `|default<>0$rgnt` becomes
-`/rf_ram_if|default<>0$rgnt`). The gold side (instance-prefixed names
-from the flattened original Verilog) does not change; do not touch it.
+`/rf_ram_if|default<>0$rgnt`; match lines are written from /top, so no
+`/top/` prefix there). The gold side (instance-prefixed names from the
+flattened original Verilog) does not change; do not touch it.
 
-A mechanical cross-check runs before FEV: it enumerates both sides'
-signals and rejects match lines that name signals that do not exist, or
-gold state left unmatched. If it fails, no FEV run is spent; fix the
-listed disagreements. You can run it yourself as
+A mechanical cross-check runs before FEV: it regenerates the gate side
+from wip.tlv with SandPiper, enumerates both sides' signals, and rejects
+match lines that name signals that do not exist, or gold state left
+unmatched. A wip.tlv that SandPiper refuses to compile fails the check
+too, with SandPiper's own message (a BAD-SCOPE line names the reference
+and the scope it was made from). If it fails, no FEV run is spent; fix
+the listed disagreements. You can run it yourself as
 `./scripts/gen_match_lines.py --check <fev_full*.eqy>`.
 
 Report in tracker.md which scope name was introduced and how many match

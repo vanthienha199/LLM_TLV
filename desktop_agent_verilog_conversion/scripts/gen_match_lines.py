@@ -22,13 +22,23 @@
 #     in the gate enumeration
 #   - gold registers with no name-identical gate partner and no match line
 #     (state that would make FEV fail or pass vacuously)
-#   Exit 2 means the check itself could not run (missing tool, elaboration
-#   failure); callers should treat that as "no verdict", not as disagreement.
+#   - a wip.tlv that SandPiper refuses to compile; the compiler's own
+#     diagnostic (e.g. the BAD-SCOPE line and the offending source line) is
+#     the report, since a compile error in the edited source is a verdict on
+#     the edit and needs no FEV run to discover
+#   Exit 2 means the check itself could not run (missing tool, compile
+#   service unreachable, elaboration failure); callers should treat that as
+#   "no verdict", not as disagreement.
 #
 # The gate side is regenerated from wip.tlv with sandpiper-saas (mirroring
 # fev.sh) into a temporary directory so the check reflects the current
 # source. When sandpiper-saas is unavailable, the on-disk generated Verilog
-# is used as-is.
+# is used as-is. sandpiper-saas is a client for a network service, so its
+# failures come in two shapes that are told apart by its output: a compile
+# error carries SandPiper's banner and an `ERROR(n)`/`FATAL_ERROR(n)`
+# diagnostic (exit 1 here), while a service failure ("Error while accessing
+# the compile service.", "Error while extracting response.", a timeout)
+# carries no SandPiper diagnostic at all (retried once, then exit 2).
 #
 # Gate-side names
 # ---------------
@@ -180,19 +190,74 @@ def regen_gate(gate_lines, tmpdir):
         out_path = os.path.join(tmpdir, sv_name)
         cmd = ["sandpiper-saas", "-i", "wip.tlv", "-o", sv_name, "--outdir", tmpdir,
                "--inlineGen", "--noline", "--iArgs"] + m5_config_args(suffix).split()
-        r = subprocess.run(cmd, capture_output=True, text=True)
-        if r.returncode != 0 and not os.path.exists(out_path):
+        r = run_sandpiper(cmd)
+        if r.returncode != 0 and not os.path.exists(out_path) and not compile_diagnostic(r):
+            # No SandPiper diagnostic: a service-side failure, possibly
+            # transient, so try once more after a pause (as fev.sh does).
             time.sleep(15)
-            r = subprocess.run(cmd, capture_output=True, text=True)
+            r = run_sandpiper(cmd)
         if not os.path.exists(out_path):
             if r.returncode == 0:
                 shutil.copy("wip.tlv", out_path)
+            elif compile_diagnostic(r):
+                print(f"SANDPIPER COMPILE ERROR: wip.tlv does not compile for {sv_name}, "
+                      f"so the match lines cannot be checked and FEV would fail at the same step. "
+                      f"Fix the source; SandPiper reports:")
+                print(compile_diagnostic(r))
+                sys.exit(1)
             else:
-                print(f"ERROR: SandPiper failed regenerating {sv_name} from wip.tlv:")
+                print(f"ERROR: SandPiper failed regenerating {sv_name} from wip.tlv "
+                      f"(no compiler diagnostic; the compile service was not reachable or "
+                      f"returned nothing):")
                 print(r.stdout + r.stderr)
                 sys.exit(2)
         return gate_lines[:i] + [s.replace(sv_name, out_path)] + gate_lines[i + 1:]
     return gate_lines
+
+
+# Run one sandpiper-saas command, treating a hang as a service failure.
+def run_sandpiper(cmd):
+    # Args:
+    #    cmd: The sandpiper-saas argument list
+    #
+    # Returns:
+    #    A CompletedProcess; on timeout, one with returncode 124 and whatever
+    #    output had been produced, so callers see a service failure rather
+    #    than an exception
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired as e:
+        def text(b):
+            return b.decode("utf-8", "replace") if isinstance(b, bytes) else (b or "")
+        return subprocess.CompletedProcess(cmd, 124, text(e.stdout), text(e.stderr))
+
+
+# Extract SandPiper's own compile diagnostic from a failed sandpiper-saas run.
+def compile_diagnostic(r):
+    # Args:
+    #    r: The CompletedProcess of a sandpiper-saas invocation
+    #
+    # Returns:
+    #    The diagnostic text (every ERROR/FATAL_ERROR block, with the source
+    #    excerpt and explanation SandPiper prints under it) when the output
+    #    carries a compiler diagnostic, or "" when it does not, which is how
+    #    a service failure looks: the client's own message or nothing at all,
+    #    with no ERROR block and no "SandPiper returning status" line
+    out = r.stdout + r.stderr
+    lines = out.splitlines()
+    kept = []
+    keep = False
+    for line in lines:
+        if re.match(r"^(FATAL_)?ERROR\(\d+\)", line):
+            keep = True
+        elif re.match(r"^[A-Z_]+\(\d+\)", line) or "SandPiper returning status" in line:
+            keep = False
+        if keep:
+            kept.append(line)
+    if not kept:
+        return ""
+    status = [l for l in lines if "SandPiper returning status" in l]
+    return "\n".join(kept + [re.sub(r"\x1b\[[0-9;]*m", "", s) for s in status])
 
 
 # Find the generated Verilog file the gate side reads.
