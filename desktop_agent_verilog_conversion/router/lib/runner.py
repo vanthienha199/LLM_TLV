@@ -12,7 +12,7 @@ from .edits import apply_files, extract_justification, is_no_change, restore
 from .fev import enrich_feedback, run_fev, run_in_module
 from .judge import accept_count, acceptance_ok, distinct_ok, judge, write_judge_record
 from .prompts import build_user
-from .providers import call_with_retry, run_agent_worker
+from .providers import call_with_retry, run_agent_worker, truncated, truncation_feedback
 from .workspace import (log_attempt_exchange, log_unparsed, revert,
                         set_status_fields, snap, snapshot_module)
 
@@ -147,7 +147,11 @@ def main():
                 resp, u = call_with_retry(provider, build_user(task, feedback))
                 c = track(provider, u)
                 print(f"    ({cache_str(u)})")
-                log_attempt_exchange(tname, provider, a, feedback, resp, c)
+                log_attempt_exchange(tname, provider, a, feedback, resp, c, stop=u.get("stop"))
+                if truncated(u):
+                    print(f"  [{provider} #{a}] reply TRUNCATED by the output limit at {u['out']} tokens (${c:.4f}), retry")
+                    feedback = truncation_feedback(u)
+                    continue
                 if is_no_change(resp):
                     nc_just = extract_justification(resp)
                     if nc_just:
@@ -164,6 +168,10 @@ def main():
                         print(f"  [{provider} #{a}] NO_CHANGE (${c:.4f}) -> cross-check by {checker}")
                         vresp, vu = call_with_retry(checker, build_user(task, feedback))
                         vc = track(checker, vu)
+                        if truncated(vu):
+                            print(f"  [{checker} verify] reply TRUNCATED by the output limit at {vu['out']} tokens (${vc:.4f}), retry")
+                            feedback = truncation_feedback(vu)
+                            continue
                         if is_no_change(vresp):
                             print(f"  [{checker} verify] agrees NO_CHANGE (${vc:.4f})")
                             # Every NO_CHANGE outcome goes through the judge:

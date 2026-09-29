@@ -59,7 +59,10 @@ Workers reply with whole files in `===FILE:`/`===END===` blocks, using the
 dots omission format: a line containing exactly `...` stands for an
 unchanged region of the original file, applied by diff alignment. An
 ambiguous `...` (mixed with changed lines in one region) fails soft to a
-request for the complete file.
+request for the complete file. A reply the provider cut at its output
+limit is never applied: the next attempt is told the reply was truncated
+at N tokens and to use `...` omissions, and attempts.jsonl records the
+provider's stop reason.
 
 ## Setup
 

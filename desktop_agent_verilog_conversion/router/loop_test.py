@@ -6,6 +6,9 @@ prompt or the attempts.jsonl record the router wrote.
 
 Run: python3 loop_test.py   (no pytest; prints "N/N cases passed", exit 1 on fail)
 """
+import contextlib
+import io
+import json
 import os
 import sys
 import tempfile
@@ -20,7 +23,7 @@ os.environ["MM_JUDGE"] = "0"
 os.environ.pop("MM_ORDER", None)
 os.environ.pop("MM_COMMON_GUIDE", None)
 
-from lib import config, judge
+from lib import accounting, config, judge, runner, workspace
 
 CASES = []
 
@@ -75,6 +78,52 @@ def _():
         passed, reason, cost = judge.judge("T", "task text", "before", "after", changed=["wip.tlv"])
         assert passed is False and reason == "nope"
         assert "Other files the worker changed" not in seen["prompt"]
+
+
+TRUNC_REPLY = "===FILE: wip.tlv===\nm4_TLV_version 1d\n\\SV\n   module x(\n"
+TRUNC_USAGE = {"in": 100, "out": 8000, "cache_read": 0, "cache_write": 0, "stop": "max_tokens"}
+FULL_USAGE = {"in": 100, "out": 10, "cache_read": 0, "cache_write": 0, "stop": "end_turn"}
+
+
+@case("loop: truncated reply skips apply, feeds targeted feedback, logs stop reason")
+def _():
+    with tempfile.TemporaryDirectory() as mdir:
+        config.init(mdir)
+        with open(os.path.join(mdir, "wip.tlv"), "w") as f:
+            f.write("m4_TLV_version 1d\n")
+        with open(os.path.join(mdir, "task_a.txt"), "w") as f:
+            f.write("Do the thing.\n")
+        with open(os.path.join(mdir, "order.json"), "w") as f:
+            f.write('[["Task A", "task_a.txt"]]\n')
+        os.environ["MM_ORDER"] = os.path.join(mdir, "order.json")
+        replies = [(TRUNC_REPLY, dict(TRUNC_USAGE)), ("NO_CHANGE", dict(FULL_USAGE))]
+        prompts = []
+
+        def fake_call(provider, user, tries=8, system=None):
+            prompts.append(user)
+            return replies.pop(0)
+
+        def no_apply(text):
+            raise AssertionError("apply_files was called on a truncated reply")
+
+        def no_fev():
+            raise AssertionError("run_fev was called on a truncated reply")
+
+        runner.call_with_retry = fake_call
+        runner.apply_files = no_apply
+        runner.run_fev = no_fev
+        with contextlib.redirect_stdout(io.StringIO()):
+            runner.main()
+        assert not replies, "second attempt never ran"
+        fb = prompts[1][2]
+        assert "cut off by the output token limit after 8000 tokens" in fb, fb
+        assert "stop reason: max_tokens" in fb, fb
+        assert '"..." omission lines' in fb, fb
+        assert "send it in full, with no commentary" in fb, fb
+        recs = [json.loads(l) for l in open(os.path.join(mdir, "attempts.jsonl"))]
+        assert [r["stop_reason"] for r in recs] == ["max_tokens", "end_turn"], recs
+        assert "cut off by the output token limit" in recs[1]["feedback_in"], recs[1]
+        assert accounting.stats[-1] == ("Task A", "deepseek (no-change)"), accounting.stats
 
 
 def main():
