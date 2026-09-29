@@ -111,13 +111,13 @@ def main():
                             if JUDGE_ON:
                                 if "wip.tlv" in files:
                                     jp, jreason, jc = judge(tname, task, task_before, snap("wip.tlv"),
-                                                            justification=extract_justification(report))
+                                                            justification=extract_justification(report), changed=files)
                                 else:
                                     # Design credit without touching wip.tlv (audit Aug 25 dodge
                                     # gap): judge whether leaving the design unchanged is the
                                     # correct outcome for this task.
                                     jp, jreason, jc = judge(tname, task, task_before, task_before,
-                                                            justification=extract_justification(report), nochange=True)
+                                                            justification=extract_justification(report), nochange=True, changed=files)
                                 write_judge_record(tname, jp, jreason, jc)
                                 print(f"  [judge] {'PASS' if jp else 'FAIL'} (${jc:.4f})" + ("" if jp else f": {jreason[:150]}"))
                                 if not jp:
@@ -204,13 +204,13 @@ def main():
                                 if JUDGE_ON:
                                     if "wip.tlv" in vfiles:
                                         jp, jreason, jc = judge(tname, task, task_before, snap("wip.tlv"),
-                                                                justification=extract_justification(vresp))
+                                                                justification=extract_justification(vresp), changed=vfiles)
                                     else:
                                         # Design credit without touching wip.tlv (audit Aug 25 dodge
                                         # gap): judge whether leaving the design unchanged is the
                                         # correct outcome for this task.
                                         jp, jreason, jc = judge(tname, task, task_before, task_before,
-                                                                justification=extract_justification(vresp), nochange=True)
+                                                                justification=extract_justification(vresp), nochange=True, changed=vfiles)
                                     write_judge_record(tname, jp, jreason, jc)
                                     print(f"  [judge] {'PASS' if jp else 'FAIL'} (${jc:.4f})" + ("" if jp else f": {jreason[:150]}"))
                                     if not jp:
@@ -261,13 +261,13 @@ def main():
                         if JUDGE_ON:
                             if "wip.tlv" in files:
                                 jp, jreason, jc = judge(tname, task, task_before, snap("wip.tlv"),
-                                                        justification=extract_justification(resp))
+                                                        justification=extract_justification(resp), changed=files)
                             else:
                                 # Design credit without touching wip.tlv (audit Aug 25 dodge
                                 # gap): judge whether leaving the design unchanged is the
                                 # correct outcome for this task.
                                 jp, jreason, jc = judge(tname, task, task_before, task_before,
-                                                        justification=extract_justification(resp), nochange=True)
+                                                        justification=extract_justification(resp), nochange=True, changed=files)
                             write_judge_record(tname, jp, jreason, jc)
                             print(f"  [judge] {'PASS' if jp else 'FAIL'} (${jc:.4f})" + ("" if jp else f": {jreason[:150]}"))
                             if not jp:
