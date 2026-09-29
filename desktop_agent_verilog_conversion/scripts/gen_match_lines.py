@@ -41,9 +41,15 @@
 #   - the tokens are joined with `_` in path order, and a stage suffix
 #     `_a<n>` or `_n<n>` may be appended
 #     (`/rf_ram_if|default<>0$rgnt` -> `RfRamIf_DEFAULT_rgnt_n1`)
-# A gate name that does not match that rule exactly, but does match it
-# ignoring case and underscores, is accepted with a NOTE rather than
-# failing the check.
+# The rule is applied exactly. A gate name that differs from the expected
+# name only in case or underscores is not accepted: eqy sees the name
+# SandPiper itself generates for the reference (map_match_pipesignals.py),
+# and SandPiper resolves a reference to one signal or rejects it, never to a
+# look-alike. Accepting a look-alike here would pass a match line that eqy
+# then leaves unmatched, or that names a different signal ($rdata_0 for
+# $rdata0, /rf_ramif for either of /rf_ram_if and /rfram_if). Such near
+# misses are listed in the failure instead, so a wrong reference, or a
+# drift in SandPiper's rule, is visible at once.
 #
 # A replicated scope gives the same signal a second name shape. By default
 # the loop body is a named generate block `L<n>_<Path>` and the declaration
@@ -332,13 +338,16 @@ def normalize_gate_name(name):
     return "_".join(parts)
 
 
-# Collapse a name to its case- and underscore-insensitive form, for fallback comparison.
+# Collapse a name to its case- and underscore-insensitive form, for near-miss reporting only.
 def squash(name):
     # Args:
     #    name: A normalized signal name
     #
     # Returns:
-    #    The name lower-cased with its underscores removed
+    #    The name lower-cased with its underscores removed. Distinct signals
+    #    can share this form ($a_b and $ab, /rf_ram_if and /rfram_if), so it
+    #    is never used to resolve a reference, only to name the look-alikes
+    #    in a failure report
     return name.replace('_', '').lower()
 
 
@@ -446,17 +455,18 @@ def gate_name_index(gate_sigs):
     #
     # Returns:
     #    Dict with "exact", a set of normalized names with and without their
-    #    stage suffixes, and "loose", a dict from squashed name to the set of
-    #    original gate names that produced it
+    #    stage suffixes, and "near", a dict from squashed stage-less name to
+    #    the set of normalized stage-less names that produced it, used only
+    #    to report look-alikes when a reference fails to resolve
     exact = set()
-    loose = {}
+    near = {}
     for n in gate_sigs:
         norm = normalize_gate_name(n)
         base = STAGE_SUFFIX_RE.sub('', norm)
         exact.add(norm)
         exact.add(base)
-        loose.setdefault(squash(base), set()).add(n)
-    return {"exact": exact, "loose": loose}
+        near.setdefault(squash(base), set()).add(base)
+    return {"exact": exact, "near": near}
 
 
 # Test whether a match line's gate reference names a signal that exists on the gate side.
@@ -468,9 +478,10 @@ def gate_ref_exists(ref, gate_sigs, index, dbg):
     #    dbg: The (mapping, complete) pair from debug_sig_map
     #
     # Returns:
-    #    True if the reference resolves to a gate signal, printing a NOTE
-    #    when it resolves only by the case- and underscore-insensitive
-    #    fallback; False otherwise
+    #    True if the reference resolves to a gate signal by the exact name
+    #    rule (or the DEBUG_SIGS mapping when one is present); False
+    #    otherwise. A gate name that matches only ignoring case and
+    #    underscores does not count; see near_misses
     toks = tlv_tokens(ref)
     if toks is None:
         plain = ref.lstrip('*')
@@ -482,15 +493,24 @@ def gate_ref_exists(ref, gate_sigs, index, dbg):
             return any(normalize_gate_name(v) in index["exact"] for v in names)
         if dbg_complete:
             return False
+    return tlv_stem(ref) in index["exact"]
+
+
+# List the gate names that differ from a reference's expected name only in case or underscores.
+def near_misses(ref, index):
+    # Args:
+    #    ref: The gate reference, in TL-Verilog syntax
+    #    index: The gate name index from gate_name_index
+    #
+    # Returns:
+    #    The sorted list of normalized stage-less gate names whose squashed
+    #    form equals that of the name expected from ref, for reporting
+    #    alongside a failed resolution; empty when ref is not a pipesignal
+    #    reference or nothing comes close
     stem = tlv_stem(ref)
-    if stem in index["exact"]:
-        return True
-    hits = index["loose"].get(squash(stem))
-    if hits:
-        print(f"NOTE: '{ref}' resolves to {sorted(hits)} only by the case-insensitive "
-              f"fallback; the generated name expected from it is '{stem}[_a<n>]'.")
-        return True
-    return False
+    if stem is None:
+        return []
+    return sorted(index["near"].get(squash(stem), ()))
 
 
 # Reduce a gate name to the pipesignal name it was generated from.
@@ -584,6 +604,10 @@ def check(eqy_file, gold_sigs, gate_sigs, match_lines, dbg):
         if not gate_ref_exists(gate_ref, gate_sigs, index, dbg):
             stem = tlv_stem(gate_ref)
             hint = f" (no gate signal matches '{stem}[_a<n>]')" if stem else ""
+            near = near_misses(gate_ref, index)
+            if near:
+                hint += (f"; not accepted: {near} differ from it only in case or underscores, "
+                         f"and eqy will not resolve the reference to them either")
             problems.append(f"gate reference maps to no gate signal: 'gold-match {g} {gate_ref}'{hint}")
     covered = set()
     for n, v in gold_sigs.items():
