@@ -388,6 +388,41 @@ rm -f ./tmp/latest
 ln -s ${TEMP_NAME} ./tmp/latest
 
 
+######################
+# Pre-SandPiper Lint #
+######################
+
+# Lint wip.tlv and the fev*.eqy match sections against the TL-Verilog spec and the Macros Guide
+# before any SandPiper-SaaS call. Every finding is a class of error that SandPiper (or eqy, one
+# cloud round trip later) rejects or, worse, silently misinterprets: a column-0 line that ends
+# the \TLV region, a reference to a sibling scope, an alignment in the middle of a path, an
+# unbalanced M5 quote. Failing here reports every finding at once, in milliseconds, each with
+# the spec section to read. --strict adds the spec's two-letter minimum for $ names, which
+# SandPiper itself does not enforce.
+"${script_dir}/tlv_lint.py" --strict . > "${TEMP_DIR}/tlv_lint.log" 2>&1
+lint_status=$?
+if [[ $lint_status -ne 0 ]]; then
+  echo
+  echo "TL-Verilog lint findings (file:line: RULE: message (spec section)):"
+  echo
+  cat "${TEMP_DIR}/tlv_lint.log"
+  echo
+  if [[ $lint_status -ne 1 ]]; then
+    fail 1 "TL-Verilog lint could not run (see above)."
+  fi
+  fail 2 "TL-Verilog lint found $(wc -l < "${TEMP_DIR}/tlv_lint.log" | tr -d ' ') issue(s) in wip.tlv or fev*.eqy (listed above). Each line cites the TL-Verilog spec or Macros Guide section it violates; fix every finding and rerun. Nothing was sent to SandPiper."
+fi
+
+# Advisory: report parameters of orig.sv that no FEV configuration ever changes from its
+# default, so parameter-dependent logic is not left unverified by accident. Some parameters are
+# legitimately fixed, so this only warns; it never fails the run.
+"${script_dir}/config_coverage.py" --warn-only . > "${TEMP_DIR}/config_coverage.log" 2>&1
+if [[ -s "${TEMP_DIR}/config_coverage.log" ]]; then
+  cat "${TEMP_DIR}/config_coverage.log"
+  echo
+fi
+
+
 # wip.sv should exist if we NEED_FULL_FEV.
 MISSING_SV=false
 if [[ $NEED_FULL_FEV == true && ! -f wip.sv ]]; then
