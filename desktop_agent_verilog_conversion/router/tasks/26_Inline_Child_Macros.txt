@@ -1,34 +1,62 @@
-Summary: Replace child module instantiations with the children's TLV macros.
+Summary: Instantiate one converted child module's TLV macro in place of its Verilog instantiation.
 
 This step applies only when the module instantiates submodules whose own
 conversions are complete (each child's directory holds a fully_feved.tlv
-whose logic lives in a `\TLV <child_name>(/_top)` macro). If the module has
-no submodule instantiations, report NO_CHANGE. If a child's conversion is
-not complete, stop and report which child is missing.
+whose logic lives in a `\TLV <child_name>(/_top, /_name)` macro, the scope
+form introduced by the "Introduce TLV Scope" task). If the module has no
+submodule instantiations, report NO_CHANGE. If a child's conversion is not
+complete, stop and report which child is missing; children are converted
+first, parents after.
 
-Transform the module one child at a time:
+Convert exactly ONE child instantiation in this task, the first remaining
+one in source order. If other instantiations remain afterwards, say so in
+tracker.md; the task is applied again for the next child. Doing one child
+per task keeps each FEV step small and the diff reviewable.
 
-1. Reference each child's macro from its own file with the M5 include
+Transform:
+
+1. Reference the child's macro from its own file with the M5 include
    mechanism rather than copying the definition in. The include line goes
    near the top of the file, after the version line and `use(m5-1.0)`.
-2. Replace the child's module instantiation (inside `\SV_plus`) with an
-   `m5+<child_name>(/_top)` macro instantiation in the enclosing scope.
-3. Connect the interfaces. Where the parent wire feeding a child port and
+2. Parameters. The child's conversion turned the conditions it elaborates
+   on into M5 variables declared with `default_var` in the child's file
+   (for example `default_var(cond_width_32, 0)` in serv_rf_ram_if). Set
+   each such variable on the line immediately BEFORE the macro call with
+   `m5_var(<name>, <value>)`, using the exact variable names the child's
+   file declares and the value implied by the Verilog instantiation's
+   parameters. Because the child declares them with `default_var`, the
+   parent's setting wins and the child's default applies otherwise. Do not
+   pass these as macro arguments; the macro keeps its `(/_top, /_name)`
+   signature. Numeric Verilog parameters that the child still carries as
+   plain Verilog parameters (`width`, `depth`) keep flowing through the
+   module interface as they do today; do not convert them in this task.
+   A parameter that is global to the project (a global define) stays a
+   global definition, not a per-call setting.
+3. Replace the child's module instantiation (inside `\SV_plus`) with the
+   macro instantiation in the enclosing scope, passing the instance name as
+   the scope: `m5+<child_name>(/_top, /<instance_name>)`. Two instantiations
+   of the same child get two different scope names, so their signals never
+   collide.
+4. Connect the interfaces. Where the parent wire feeding a child port and
    the child macro's pipesignal share a name, the connection happens by
    itself and the wire disappears. Where names differ, keep a one-line
-   pipesignal assignment per signal. Where two children would collide on
-   the same pipesignal name used for different things, rename in the
-   including file, not in the child's macro.
-4. Any parameters the instantiation passed become the corresponding M5
-   configuration knobs of the child macro; carry them through the include.
+   pipesignal assignment per signal, reaching into the child's scope by a
+   path SandPiper can resolve (`/<instance_name>|default<>0$sig` from the
+   parent's own scope). Rename in the including file, never inside the
+   child's macro.
 
 The verification reference does not change: FEV still compares against the
-flattened original Verilog hierarchy from the previous step, so the match
-lines with instance-prefixed gold names continue to apply. Do not weaken
-or remove them.
+flattened original Verilog hierarchy, so the match lines with
+instance-prefixed gold names continue to apply. The gate-side names of the
+child's signals now carry the scope (`/<instance_name>|default<>0$sig`);
+update them in each fev*.eqy match section and do not weaken or remove any
+line. The mechanical cross-check (`./scripts/gen_match_lines.py --check
+<fev_full*.eqy>`) runs before FEV and lists any disagreement.
 
-Report in tracker.md the line count before and after, and which wires
-disappeared through shared names.
+Report in tracker.md: which child was instantiated and under which scope
+name, which M5 variables were set before the call and to what values,
+the line count before and after, which wires disappeared through shared
+names, and how many children remain.
 
 Be sure all changes for this task have been completed fully and that
 `./scripts/fev.sh` passes before reviewing
