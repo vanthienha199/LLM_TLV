@@ -1,11 +1,17 @@
-- Every child module instantiation from the BEFORE file is gone from the
-  AFTER file, each replaced by an m5+ macro instantiation of that child.
-- The child macro definitions are referenced by include, not pasted into
+- Exactly one child module instantiation from the BEFORE file, the first
+  remaining one in source order, is gone from the AFTER file, replaced by
+  an m5+ macro instantiation of that child that passes the instance name
+  as the scope. Other child instantiations stay as they are; converting
+  one child per task is the required scope, not unfinished work.
+- The child macro definition is referenced by include, not pasted into
   this file. A copied macro body appearing in the AFTER file fails this
   task.
-- The port-connection wiring for each replaced instantiation is gone or
+- The port-connection wiring for the replaced instantiation is gone or
   reduced to one-line pipesignal assignments only where the names differ.
 - No child macro file was edited to make the parent work; renames to avoid
   collisions happen in the including file.
-- The module wrapper and the parent macro's own logic are otherwise
-  unchanged.
+- Match lines for the inlined child's signals were updated to the scoped
+  gate names, not removed or weakened.
+- The module wrapper and the parent's own logic are otherwise unchanged,
+  apart from declarations the inlined macro needs from its old module
+  wrapper (such as its localparams).
