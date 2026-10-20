@@ -156,6 +156,7 @@ The implementation lives in `lib/`, one concern per module:
 | MM_ACCEPT_GLOB | (off) | glob whose match count must increase during the task |
 | MM_ACCEPT_DISTINCT | (off) | 1 = per-config wip_*.sv must differ |
 | MM_MAX_COST_DEEPSEEK / _CLAUDE | 2.0 / 5.0 | USD safety caps per run |
+| MM_DEEPSEEK_MAX_TOKENS | 16000 | DeepSeek output token limit per call |
 | MM_SERV_DIR | ./serv | docker mount for the Verilog project checkout |
 | MM_LLMTLV_DIR | this repo | docker mount for the LLM_TLV checkout (fev.sh harness) |
 | MM_TOOLSHIM_DIR | router/toolshim | docker mount for the timeout shim |
