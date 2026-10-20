@@ -85,4 +85,7 @@ def build_user(task, feedback=None):
               "reason, it is acceptable to reply NO_CHANGE followed by a "
               "===JUSTIFICATION===/===END=== block naming the exact constructs and why; "
               "the reviewing agent will weigh it on its merits.")
+    if os.environ.get("MM_RAG") == "1":
+        from .rag_hook import augment
+        u, fb = augment(task, feedback, u, fb)
     return COMMON, u, fb

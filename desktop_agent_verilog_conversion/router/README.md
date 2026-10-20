@@ -114,6 +114,7 @@ Tests, all dependency-free:
 python3 tests.py        # parser cases for the edit format
 python3 smoke_test.py   # imports every module, exercises preflight
 python3 loop_test.py    # judge context and retry loop against fake providers
+python3 rag_test.py     # retrieval tokenizer, leakage filter, MM_RAG off = unchanged prompt
 ```
 
 The router resumes: completed tasks and the in-flight attempt budget live in
@@ -139,6 +140,8 @@ The implementation lives in `lib/`, one concern per module:
 | lib/state.py | e6_state.json load/save for resume |
 | lib/preflight.py | fail-fast environment checks before any paid call |
 | lib/runner.py | the task loop: provider escalation, NO_CHANGE cross-check, judge routing, resume bookkeeping |
+| lib/rag_hook.py | MM_RAG=1 only: retrieved notes appended to the worker prompt, rag_log.jsonl |
+| rag/ | retrieval store builder (build_index.py), BM25 retriever (retrieve.py), generated store.json |
 
 ## Environment reference
 
@@ -160,6 +163,8 @@ The implementation lives in `lib/`, one concern per module:
 | MM_DEEPSEEK_KEY_FILE / MM_ANTHROPIC_KEY_FILE | ~/.secrets/... | API key file paths |
 | MM_AGENT_CMD / MM_AGENT_MODEL | claude / sonnet | agent worker CLI and model |
 | MM_AGENT_MAX_TURNS / MM_AGENT_TIMEOUT | 40 / 900 | agent worker limits |
+| MM_RAG | (off) | 1 = append retrieved reference notes to worker prompts (see below) |
+| MM_RAG_STORE | router/rag/store.json | retrieval store to load |
 
 ## Agent worker mode
 
@@ -173,6 +178,37 @@ attempts.jsonl. Requires the `claude` CLI installed and logged in
 (subscription usage, no API cost for the worker; the judge still uses the
 anthropic key file). This is the direction of issue #8: programmatic
 sequencing with an agentic refactor step.
+
+## Retrieved reference notes (MM_RAG=1, experimental)
+
+With `MM_RAG=1` the worker prompt gets two extra blocks; with it unset the
+prompt is byte-identical to the default (`rag_test.py` checks this). The
+judge prompt never changes.
+
+- After the files (stable part, so retries still hit the prompt cache):
+  `# Reference notes (retrieved)`, the top 4 chunks for the task text plus
+  the most distinctive tokens of the current wip.tlv.
+- After the failure feedback: `# Reference notes for this failure
+  (retrieved)`, the top 3 chunks for the feedback text, with past
+  failure-to-fix pairs weighted 1.5x.
+
+Retrieval is BM25 over tokens that keep TL-Verilog constructs whole
+(`\SV_plus`, `m5_var`, `>>1`, `$sig`, `|pipe`, `/scope`, `BAD-SCOPE`).
+Failure-to-fix pairs whose source module is the module under test, or any
+run variant of it (`serv_rf_if_fresh`, `serv_rf_if_e1` count as
+`serv_rf_if`), are never returned. Each call appends the chunk ids to
+`<module_dir>/rag_log.jsonl`. Every API call, worker and judge, also
+appends its token counts and cost to `<module_dir>/usage.jsonl`.
+
+`rag/store.json` is generated and committed. Its sources live outside this
+repo: the TL-Verilog reference digest (`conversion_rulebook.txt`,
+`00_MASTER_REFERENCE.md`, `notes/01..06`) and past router module
+directories (`history/NNN/{status.json,wip.tlv,judge.json}`). Rebuild with
+
+```
+MM_RAG_SOURCES=/path/to/tlv_reference python3 rag/build_index.py \
+    --runs /path/to/serv/tlv [--runs <another dir of module dirs>]
+```
 
 ## Hierarchy combining plan (pre-step)
 
