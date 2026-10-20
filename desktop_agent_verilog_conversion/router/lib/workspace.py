@@ -30,6 +30,13 @@ def context_files():
     return [n for n in names if os.path.exists(os.path.join(config.MDIR, n))]
 
 
+def included_files():
+    d = os.path.join(config.MDIR, "lib")
+    if not os.path.isdir(d):
+        return []
+    return ["lib/" + f for f in sorted(os.listdir(d)) if f.endswith(".tlv")]
+
+
 def snapshot_module():
     snap = {}
     for f in os.listdir(config.MDIR):

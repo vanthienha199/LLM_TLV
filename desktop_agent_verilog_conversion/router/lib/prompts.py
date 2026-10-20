@@ -3,7 +3,7 @@
 import os
 
 from . import config
-from .workspace import context_files, snap
+from .workspace import context_files, included_files, snap
 
 _FMT_DOTS = (
     "Only include files you change. For a file that already exists, you may shorten your "
@@ -77,6 +77,12 @@ def build_user(task, feedback=None):
     u = "# Task\n\n" + task + "\n"
     for n in context_files():
         u += f"\n===FILE: {n}===\n" + snap(n) + "\n===END===\n"
+    inc = included_files()
+    if inc:
+        u += ("\n# Included child files (read-only; referenced with m4_include_lib and "
+              "uploaded by the -f list in config.json; never edit or reply with them)\n")
+        for n in inc:
+            u += f"\n===INCLUDED: {n}===\n" + snap(n) + "\n===END===\n"
     fb = ""
     if feedback:
         fb = ("\n# Previous attempt FAILED verification. Tool output:\n\n" + feedback[-3000:] +
