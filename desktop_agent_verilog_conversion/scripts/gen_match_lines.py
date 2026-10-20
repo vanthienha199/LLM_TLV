@@ -673,6 +673,11 @@ def check(eqy_file, gold_sigs, gate_sigs, match_lines, dbg):
             if near:
                 hint += (f"; not accepted: {near} differ from it only in case or underscores, "
                          f"and eqy will not resolve the reference to them either")
+            if gate_ref.startswith("/top/"):
+                rel = gate_ref[len("/top"):]
+                if gate_ref_exists(rel, gate_sigs, index, dbg):
+                    hint += (f"; '{rel}' resolves: match lines name gate signals from /top, "
+                             f"so drop the leading /top")
             problems.append(f"gate reference maps to no gate signal: 'gold-match {g} {gate_ref}'{hint}")
     covered = set()
     for n, v in gold_sigs.items():
