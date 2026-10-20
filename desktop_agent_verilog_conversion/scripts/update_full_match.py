@@ -70,6 +70,7 @@ for fev_full_eqy in pathlib.Path('.').glob(FEV_FULL_ALT_EQY_GLOB):
             in_match_section = False
             full_match_pairs = []
             full_gate_to_index = {}
+            other_match_lines = []
 
             for line in fin:
                 if MATCH_SECTION_RE.match(line):
@@ -100,6 +101,7 @@ for fev_full_eqy in pathlib.Path('.').glob(FEV_FULL_ALT_EQY_GLOB):
                         # Write updated match section lines.
                         for pair in full_match_pairs:
                             fout.write(f'gold-match {pair["gold"]} {pair["gate"]}\n')
+                        fout.writelines(other_match_lines)
                         fout.write(line)  # Write the blank line ending the section.
                         continue
 
@@ -113,6 +115,8 @@ for fev_full_eqy in pathlib.Path('.').glob(FEV_FULL_ALT_EQY_GLOB):
                             full_match_pairs.append({'gold': parts[1], 'gate': gate})
                         else:
                             print(f"WARNING: Ignoring malformed line in {fev_full_eqy}: {line.strip()}")
+                    elif re.match(r'(gold|gate)-nomatch\s|#', line.strip()):
+                        other_match_lines.append(line)
                     else:
                         print(f"WARNING: Ignoring malformed line in {fev_full_eqy}: {line.strip()}")
                 else:
