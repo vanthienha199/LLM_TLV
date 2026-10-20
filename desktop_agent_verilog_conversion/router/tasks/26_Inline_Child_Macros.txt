@@ -27,7 +27,14 @@ Transform:
    parameters. Because the child declares them with `default_var`, the
    parent's setting wins and the child's default applies otherwise. Do not
    pass these as macro arguments; the macro keeps its `(/_top, /_name)`
-   signature. Numeric Verilog parameters that the child still carries as
+   signature. A child whose file does not declare a condition with
+   `default_var` but reads it from the configuration (`--m5def <name>=<v>`
+   in its config.json M5_configs) needs the same name defined by the
+   parent's M5_configs, one value per parent configuration, matching that
+   configuration's Verilog parameters; add it there instead of an
+   `m5_var` line. M5 cannot derive these values from Verilog parameters:
+   `width` is Verilog text to M5, so an `m5_if` on `width == 32` compares
+   strings and does not give the elaborated value. Numeric Verilog parameters that the child still carries as
    plain Verilog parameters (`width`, `depth`) keep flowing through the
    module interface as they do today; do not convert them in this task.
    A parameter that is global to the project (a global define) stays a
@@ -36,20 +43,36 @@ Transform:
    macro instantiation in the enclosing scope, passing the instance name as
    the scope: `m5+<child_name>(/_top, /<instance_name>)`. Two instantiations
    of the same child get two different scope names, so their signals never
-   collide.
+   collide. The include brings in only the child's `\m5` definitions
+   and `\TLV` macros; the child's module wrapper (its `\SV` region,
+   including any `localparam` declared there and used by the macro's
+   signal declarations) is discarded. Every such module-level `localparam`
+   the macro uses must be declared in the parent's module, with the same
+   definition, unless the parent already has a parameter of that name
+   with the same value.
 4. Connect the interfaces. Where the parent wire feeding a child port and
    the child macro's pipesignal share a name, the connection happens by
    itself and the wire disappears. Where names differ, keep a one-line
    pipesignal assignment per signal, reaching into the child's scope by a
-   path SandPiper can resolve (`/<instance_name>|default<>0$sig` from the
-   parent's own scope). Rename in the including file, never inside the
-   child's macro.
+   path SandPiper can resolve. A scope path resolves relative to where it
+   is written: SandPiper looks for its first element as a child or an
+   ancestor of the current scope, and nothing else. The child's scope is a
+   child of /top (the call site), and the parent's own assignments sit in
+   the parent's `|default` under /top, so the two are siblings and the
+   reference climbs to the common ancestor:
+   `/top/<instance_name>|default<>0$sig`. Writing
+   `/<instance_name>|default<>0$sig` from inside the parent's `|default`
+   is a BAD-SCOPE error (`Scope "/<instance_name>" could not be found as a
+   child or ancestor of scope "|default"`). Put `<>0` at the END of the
+   path, just before the `$`. Rename in the including file, never inside
+   the child's macro.
 
 The verification reference does not change: FEV still compares against the
 flattened original Verilog hierarchy, so the match lines with
 instance-prefixed gold names continue to apply. The gate-side names of the
-child's signals now carry the scope (`/<instance_name>|default<>0$sig`);
-update them in each fev*.eqy match section and do not weaken or remove any
+child's signals now carry the scope (`/<instance_name>|default<>0$sig`;
+match lines are written from /top, so no `/top/` prefix there); update
+them in each fev*.eqy match section and do not weaken or remove any
 line. The mechanical cross-check (`./scripts/gen_match_lines.py --check
 <fev_full*.eqy>`) runs before FEV and lists any disagreement.
 
