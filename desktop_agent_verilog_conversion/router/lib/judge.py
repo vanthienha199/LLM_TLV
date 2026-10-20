@@ -91,7 +91,7 @@ def judge(tname, task, before, after, justification=None, nochange=False, change
               "for the exact constructs left unconverted; reject vague effort claims.\n")
     u += "\nWas the refactoring goal achieved?"
     resp, ju = call_with_retry("claude", (u, ""), system=JUDGE_SYSTEM)
-    jc = track("claude", ju)
+    jc = track("claude", ju, role="judge")
     passed = bool(re.search(r"VERDICT:\s*PASS", resp))
     m = re.search(r"REASON:\s*(.+)", resp, re.S)
     reason = m.group(1).strip()[:2000] if m else resp.strip()[:2000]

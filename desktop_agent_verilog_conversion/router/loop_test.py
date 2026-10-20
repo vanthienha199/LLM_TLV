@@ -53,7 +53,7 @@ def _():
             return "VERDICT: PASS", {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0}
 
         judge.call_with_retry = fake_call
-        judge.track = lambda provider, u: 0.0
+        judge.track = lambda provider, u, **kw: 0.0
         passed, reason, cost = judge.judge("T", "task text", "before", "after",
                                            changed=["wip.tlv", "fev_full_p2.eqy"])
         p = seen["prompt"]
@@ -74,7 +74,7 @@ def _():
             return "VERDICT: FAIL\nREASON: nope", {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0}
 
         judge.call_with_retry = fake_call
-        judge.track = lambda provider, u: 0.0
+        judge.track = lambda provider, u, **kw: 0.0
         passed, reason, cost = judge.judge("T", "task text", "before", "after", changed=["wip.tlv"])
         assert passed is False and reason == "nope"
         assert "Other files the worker changed" not in seen["prompt"]

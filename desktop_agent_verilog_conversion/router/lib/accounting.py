@@ -1,15 +1,18 @@
 """Cost and cache-usage tracking, per-provider spend caps, run summary."""
 
+import json
+import os
 import sys
 import time
 
+from . import config
 from .config import MAX_COST
 
 cost = {"deepseek": 0.0, "claude": 0.0}
 cache_totals = {"read": 0, "write": 0, "in": 0}
 
 
-def track(provider, u):
+def track(provider, u, role="worker"):
     # Cache pricing per the official price sheets: anthropic cache write is
     # 1.25x input and cache read 0.1x input; deepseek cache hit ~0.1x miss.
     if provider == "deepseek":
@@ -17,6 +20,7 @@ def track(provider, u):
     else:
         c = (u["in"]*3.0 + u["cache_write"]*3.75 + u["cache_read"]*0.30 + u["out"]*15.0)/1e6
     cost[provider] += c
+    log_usage(provider, role, u, c)
     cache_totals["read"] += u["cache_read"]
     cache_totals["write"] += u["cache_write"]
     cache_totals["in"] += u["in"]
@@ -25,6 +29,16 @@ def track(provider, u):
         print_summary()
         sys.exit(2)
     return c
+
+
+def log_usage(provider, role, u, c):
+    if not config.MDIR:
+        return
+    rec = {"ts": time.strftime("%Y-%m-%d %H:%M:%S"), "provider": provider, "role": role,
+           "in": u.get("in", 0), "out": u.get("out", 0), "cache_read": u.get("cache_read", 0),
+           "cache_write": u.get("cache_write", 0), "stop": u.get("stop", ""), "cost_usd": round(c, 6)}
+    with open(os.path.join(config.MDIR, "usage.jsonl"), "a") as f:
+        f.write(json.dumps(rec) + "\n")
 
 
 def cache_str(u):
