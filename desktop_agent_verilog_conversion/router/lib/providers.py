@@ -161,6 +161,9 @@ def parse_agent_output(stdout):
     return str(d.get("result") or d.get("subtype") or ""), float(d.get("total_cost_usd") or 0.0), info
 
 
+AGENT_STOPPED = "[agent stopped early:"
+
+
 def run_agent_worker(task_text, feedback):
     prompt = _agent_prompt(task_text, feedback)
     t_start = time.time()
@@ -173,7 +176,9 @@ def run_agent_worker(task_text, feedback):
             report += "\n[stderr] " + r.stderr
     except subprocess.TimeoutExpired:
         report = f"[agent timed out after {config.AGENT_TIMEOUT}s]"
-        info = {"subtype": "timeout"}
+        info = {"subtype": "timeout", "is_error": True}
+    if info.get("is_error") or str(info.get("subtype", "")).startswith("error"):
+        report = f"{AGENT_STOPPED} {info.get('subtype', '')}]\n" + report
     wall = time.time() - t_start
     accounting.track_agent(cost, info, wall)
     return report.strip(), wall

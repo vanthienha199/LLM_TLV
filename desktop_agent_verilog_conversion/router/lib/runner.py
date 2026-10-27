@@ -12,10 +12,14 @@ from .edits import apply_files, extract_justification, is_no_change, restore
 from .fev import enrich_feedback, run_fev, run_in_module
 from .judge import accept_count, acceptance_ok, distinct_ok, judge, write_judge_record
 from .prompts import build_user
-from .providers import (agent_feedback, call_with_retry, run_agent_worker, truncated,
+from .providers import (AGENT_STOPPED, agent_feedback, call_with_retry, run_agent_worker, truncated,
                         truncation_feedback)
 from .workspace import (log_attempt_exchange, log_unparsed, revert,
                         set_status_fields, snap, snapshot_module)
+
+# Files the router itself writes in the module dir during an agent attempt;
+# a change to them is not agent work.
+ROUTER_LOGS = {"attempts.jsonl", "usage.jsonl"}
 
 # Tasks that are deterministic scripts run directly, costing no API call.
 SCRIPT_TASKS = {"No Tabs": "./scripts/no_tabs.py 2>&1"}
@@ -98,10 +102,15 @@ def main():
                         restore({f: before_snap.get(f) for f in touched_harness})
                         print(f"  [agent #{a}] RESTORED harness files it touched: {touched_harness}")
                     changed = sorted(f for f in set(before_snap) | set(after_snap)
-                                     if f not in config.HARNESS_FILES and f != "attempts.jsonl"
+                                     if f not in config.HARNESS_FILES and f not in ROUTER_LOGS
                                      and before_snap.get(f) != after_snap.get(f))
                     originals = {f: before_snap.get(f) for f in changed}
                     log_attempt_exchange(tname, "agent", a, feedback, report, 0.0)
+                    if not changed and report.startswith(AGENT_STOPPED):
+                        # Out of budget, turns or time with nothing edited: a
+                        # failed attempt, never a NO_CHANGE claim.
+                        print(f"  [agent #{a}] stopped early with no edits (wall {wall:.0f}s): {report.splitlines()[0]}")
+                        continue
                     if not changed:
                         nc_just = extract_justification(report)
                         print(f"  [agent #{a}] no design files changed (wall {wall:.0f}s) -> judged as NO_CHANGE")

@@ -254,6 +254,40 @@ def _():
         assert accounting.stats[-1] == ("Task A", "deepseek (no-change)"), accounting.stats
 
 
+@case("fallback: agent out of budget with no edits fails the attempt, its usage log is not a design change")
+def _():
+    from lib import providers
+    with tempfile.TemporaryDirectory() as mdir:
+        _agent_fallback_module(mdir)
+
+        def fake_call(provider, user, tries=8, system=None):
+            return "===FILE: wip.tlv===\nm4_TLV_version 1d\n// raw\n===END===\n", dict(FULL_USAGE)
+
+        def fake_agent(task, feedback):
+            with open(os.path.join(mdir, "usage.jsonl"), "a") as f:
+                f.write('{"provider": "agent", "cost_usd": 0.5}\n')
+            return providers.AGENT_STOPPED + " error_max_budget_usd]\nworking...", 115.0
+
+        fevs = []
+        saved = (runner.PROVIDERS, runner.call_with_retry, runner.run_agent_worker, runner.run_fev,
+                 runner.revert, runner.enrich_feedback, runner.apply_files)
+        runner.PROVIDERS = [("deepseek", 1), ("agent", 1)]
+        runner.call_with_retry = fake_call
+        runner.run_agent_worker = fake_agent
+        runner.run_fev = lambda: (fevs.append(1), (False, "FEV FAILED"))[1]
+        runner.revert = lambda: None
+        runner.enrich_feedback = lambda out: out
+        runner.apply_files = edits_mod.apply_files
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                runner.main()
+        finally:
+            (runner.PROVIDERS, runner.call_with_retry, runner.run_agent_worker, runner.run_fev,
+             runner.revert, runner.enrich_feedback, runner.apply_files) = saved
+        assert len(fevs) == 1, "FEV ran for the agent attempt that edited nothing"
+        assert accounting.stats[-1] == ("Task A", "FAILED"), accounting.stats
+
+
 def main():
     fails = 0
     for name, fn in CASES:
