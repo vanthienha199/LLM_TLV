@@ -199,6 +199,9 @@ The implementation lives in `lib/`, one concern per module:
 | MM_DEEPSEEK_KEY_FILE / MM_ANTHROPIC_KEY_FILE | ~/.secrets/... | API key file paths |
 | MM_AGENT_CMD / MM_AGENT_MODEL | claude / sonnet | agent worker CLI and model |
 | MM_AGENT_MAX_TURNS / MM_AGENT_TIMEOUT | 40 / 900 | agent worker limits |
+| MM_AGENT_REFS | router's ../instructions | comma list of reference dirs the agent may search and read (passed as --add-dir, listed in its prompt); empty turns it off |
+| MM_AGENT_KEY_FILE | (off: subscription) | run the agent on this Anthropic API key instead of the logged-in subscription |
+| MM_AGENT_MAX_BUDGET / MM_MAX_COST_AGENT | (none) / 5.0 | USD cap per agent invocation (claude --max-budget-usd) / per run |
 
 ## Agent worker mode
 
@@ -212,6 +215,14 @@ attempts.jsonl. Requires the `claude` CLI installed and logged in
 (subscription usage, no API cost for the worker; the judge still uses the
 anthropic key file). This is the direction of issue #8: programmatic
 sequencing with an agentic refactor step.
+
+As a fallback after raw calls (`"deepseek:3,agent:1"`), the agent runs only
+once the raw attempts on a task are used up, starting from the last
+verified files. It gets the last FEV failure of that task as feedback (a
+truncation note from a cut-off raw reply is replaced by the last real FEV
+failure, since the reply format does not apply to the agent), and it can
+search the reference directories in MM_AGENT_REFS for TL-Verilog and M5
+notes on its own. Its cost, turns and wall time land in usage.jsonl.
 
 ## Hierarchy combining plan (pre-step)
 

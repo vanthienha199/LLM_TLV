@@ -7,7 +7,7 @@ import subprocess
 import time
 import urllib.request
 
-from . import config
+from . import accounting, config
 from .prompts import AGENT_PREAMBLE, SYSTEM
 
 
@@ -86,30 +86,94 @@ def truncated(usage):
 # Feedback for the attempt after a truncated reply: say where it was cut and
 # how to fit the same edit, so the model does not just resend the same
 # oversized reply and lose another attempt.
+TRUNCATION_PREFIX = "Your previous reply was cut off by the output token limit"
+
+
 def truncation_feedback(usage):
-    return (f"Your previous reply was cut off by the output token limit after "
+    return (f"{TRUNCATION_PREFIX} after "
             f"{usage.get('out', 0)} tokens (stop reason: {usage.get('stop')}), so nothing "
             "was applied. Resend the same edit, but use \"...\" omission lines for every "
             "unchanged region of each file so the reply fits. If a whole file changes, "
             "send it in full, with no commentary or explanation around the file blocks.")
 
 
-def run_agent_worker(task_text, feedback):
-    prompt = AGENT_PREAMBLE + "# Task\n\n" + task_text + "\n"
+# Feedback the agent sees. A truncation note tells a raw API worker how to
+# shorten its reply format, which means nothing to an agent editing files in
+# place, so after a truncated raw attempt the agent gets the last real
+# verification failure of this task instead (or none if there was none).
+def agent_feedback(feedback, fev_feedback):
+    if feedback and feedback.startswith(TRUNCATION_PREFIX):
+        return fev_feedback
+    return feedback
+
+
+def _agent_prompt(task_text, feedback):
+    prompt = AGENT_PREAMBLE
+    refs = [d for d in config.AGENT_REFS if os.path.isdir(d)]
+    if refs:
+        prompt += ("# Reference material\n\nTL-Verilog and M5 reference notes, conversion rules, "
+                   "and examples are in these directories (read-only for you). Search them with "
+                   "Grep/Glob and read what you need before and while editing:\n"
+                   + "".join(f"- {d}\n" for d in refs) + "\n")
+    prompt += "# Task\n\n" + task_text + "\n"
     if feedback:
         prompt += ("\n# Previous attempt FAILED verification. Tool output:\n\n"
                    + feedback[-3000:] + "\n\nFix the problem by editing the files.\n")
-    env = dict(os.environ)
-    env.pop("ANTHROPIC_API_KEY", None)
+    return prompt
+
+
+def agent_argv():
     argv = [config.AGENT_CMD, "-p", "--model", config.AGENT_MODEL,
             "--max-turns", str(config.AGENT_MAX_TURNS),
+            "--output-format", "json",
             "--permission-mode", "acceptEdits",
             "--allowedTools", "Read,Edit,Write,Grep,Glob"]
-    t_start = time.time()
+    for d in config.AGENT_REFS:
+        if os.path.isdir(d):
+            argv += ["--add-dir", d]
+    if config.AGENT_MAX_BUDGET:
+        argv += ["--max-budget-usd", str(config.AGENT_MAX_BUDGET)]
+    return argv
+
+
+def agent_env():
+    # Default: the logged-in subscription, so any API key in the environment
+    # is removed. MM_AGENT_KEY_FILE switches the agent to that API key.
+    env = dict(os.environ)
+    env.pop("ANTHROPIC_API_KEY", None)
+    if config.AGENT_KEY_FILE:
+        env["ANTHROPIC_API_KEY"] = open(os.path.expanduser(config.AGENT_KEY_FILE)).read().strip()
+    return env
+
+
+def parse_agent_output(stdout):
+    # --output-format json prints one result object; fall back to raw text.
     try:
-        r = subprocess.run(argv, input=prompt, capture_output=True, text=True,
-                           timeout=config.AGENT_TIMEOUT, cwd=config.MDIR, env=env)
-        report = (r.stdout or "") + (("\n[stderr] " + r.stderr) if r.returncode != 0 and r.stderr else "")
+        d = json.loads(stdout)
+    except (ValueError, TypeError):
+        return (stdout or ""), 0.0, {}
+    u = d.get("usage") or {}
+    info = {"turns": d.get("num_turns", 0), "subtype": d.get("subtype", ""),
+            "is_error": bool(d.get("is_error")),
+            "in": u.get("input_tokens", 0), "out": u.get("output_tokens", 0),
+            "cache_read": u.get("cache_read_input_tokens", 0),
+            "cache_write": u.get("cache_creation_input_tokens", 0)}
+    return str(d.get("result") or d.get("subtype") or ""), float(d.get("total_cost_usd") or 0.0), info
+
+
+def run_agent_worker(task_text, feedback):
+    prompt = _agent_prompt(task_text, feedback)
+    t_start = time.time()
+    cost, info = 0.0, {}
+    try:
+        r = subprocess.run(agent_argv(), input=prompt, capture_output=True, text=True,
+                           timeout=config.AGENT_TIMEOUT, cwd=config.MDIR, env=agent_env())
+        report, cost, info = parse_agent_output(r.stdout)
+        if r.returncode != 0 and r.stderr:
+            report += "\n[stderr] " + r.stderr
     except subprocess.TimeoutExpired:
         report = f"[agent timed out after {config.AGENT_TIMEOUT}s]"
-    return report.strip(), time.time() - t_start
+        info = {"subtype": "timeout"}
+    wall = time.time() - t_start
+    accounting.track_agent(cost, info, wall)
+    return report.strip(), wall

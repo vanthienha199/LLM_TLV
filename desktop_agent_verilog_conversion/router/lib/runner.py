@@ -12,7 +12,8 @@ from .edits import apply_files, extract_justification, is_no_change, restore
 from .fev import enrich_feedback, run_fev, run_in_module
 from .judge import accept_count, acceptance_ok, distinct_ok, judge, write_judge_record
 from .prompts import build_user
-from .providers import call_with_retry, run_agent_worker, truncated, truncation_feedback
+from .providers import (agent_feedback, call_with_retry, run_agent_worker, truncated,
+                        truncation_feedback)
 from .workspace import (log_attempt_exchange, log_unparsed, revert,
                         set_status_fields, snap, snapshot_module)
 
@@ -59,6 +60,7 @@ def main():
         done = False
         used = None
         feedback = None
+        fev_feedback = None
         burned = inflight.get("used", {}) if inflight.get("task") == tname else {}
         if burned:
             print(f"  (resuming mid-task: already burned {burned}, continuing with the next provider)")
@@ -78,7 +80,7 @@ def main():
                 accounting.stats.append((tname, "script"))
                 continue
             print("  [script] failed, handing to LLM with feedback")
-            feedback = sout + "\n" + out
+            feedback = fev_feedback = sout + "\n" + out
             revert()
         for pidx, (provider, tries) in enumerate(PROVIDERS):
             start = burned.get(provider, 0) + 1
@@ -88,7 +90,7 @@ def main():
                 if provider == "agent":
                     print(f"  [agent #{a}] running Claude Code worker ...", flush=True)
                     before_snap = snapshot_module()
-                    report, wall = run_agent_worker(task, feedback)
+                    report, wall = run_agent_worker(task, agent_feedback(feedback, fev_feedback))
                     after_snap = snapshot_module()
                     touched_harness = [f for f in config.HARNESS_FILES
                                        if before_snap.get(f) != after_snap.get(f)]
@@ -100,7 +102,6 @@ def main():
                                      and before_snap.get(f) != after_snap.get(f))
                     originals = {f: before_snap.get(f) for f in changed}
                     log_attempt_exchange(tname, "agent", a, feedback, report, 0.0)
-                    accounting.agent_wall[0] += wall
                     if not changed:
                         nc_just = extract_justification(report)
                         print(f"  [agent #{a}] no design files changed (wall {wall:.0f}s) -> judged as NO_CHANGE")
@@ -158,7 +159,7 @@ def main():
                                         "var(...) in wip.tlv overrides the per-config m5 definition. Restructure "
                                         "so the configuration genuinely affects the design, then re-verify.")
                         continue
-                    feedback = enrich_feedback(out)
+                    feedback = fev_feedback = enrich_feedback(out)
                     restore(originals)
                     revert()
                     continue
@@ -246,7 +247,7 @@ def main():
                                                     "\n\nComplete the remaining refactoring from the current state of the files.")
                                         continue
                                 done = True; used = f"{checker} (overruled no-change)"; break
-                            feedback = enrich_feedback(out)
+                            feedback = fev_feedback = enrich_feedback(out)
                             restore(vorig)
                             revert()
                             continue
@@ -316,7 +317,7 @@ def main():
                                     "var(...) in wip.tlv overrides the per-config m5 definition. Restructure "
                                     "so the configuration genuinely affects the design, then re-verify.")
                     continue
-                feedback = enrich_feedback(out)
+                feedback = fev_feedback = enrich_feedback(out)
                 restore(originals)
                 revert()
             if done:

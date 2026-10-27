@@ -8,7 +8,7 @@ import time
 from . import config
 from .config import MAX_COST
 
-cost = {"deepseek": 0.0, "claude": 0.0}
+cost = {"deepseek": 0.0, "claude": 0.0, "agent": 0.0}
 cache_totals = {"read": 0, "write": 0, "in": 0}
 
 
@@ -54,10 +54,28 @@ def print_summary():
     print("\n===== RUN SUMMARY =====")
     for t, u in stats:
         print(f"  {u:36} {t}")
-    print(f"cost: deepseek ${cost['deepseek']:.4f} + claude ${cost['claude']:.4f} = ${cost['deepseek']+cost['claude']:.4f}")
+    print(f"cost: deepseek ${cost['deepseek']:.4f} + claude ${cost['claude']:.4f} + agent ${cost['agent']:.4f} = ${sum(cost.values()):.4f}")
     tot = cache_totals["read"] + cache_totals["in"]
     pct = 100.0 * cache_totals["read"] / tot if tot else 0.0
     print(f"cache: read {cache_totals['read']} / write {cache_totals['write']} / uncached {cache_totals['in']} (hit {pct:.0f}%)")
     print(f"wall clock: {(time.time()-t0)/60:.1f} min")
     if agent_wall[0]:
-        print(f"agent worker wall: {agent_wall[0]/60:.1f} min (subscription, no API cost)")
+        print(f"agent worker wall: {agent_wall[0]/60:.1f} min")
+
+
+# Agent worker accounting: cost is what the claude CLI reports (0 on the
+# subscription), logged to usage.jsonl and held to MM_MAX_COST_AGENT.
+def track_agent(c, info, wall):
+    cost["agent"] += c
+    agent_wall[0] += wall
+    u = {k: info.get(k, 0) for k in ("in", "out", "cache_read", "cache_write")}
+    u["stop"] = info.get("subtype", "")
+    if config.MDIR:
+        rec = {"ts": time.strftime("%Y-%m-%d %H:%M:%S"), "provider": "agent", "role": "worker",
+               **u, "turns": info.get("turns", 0), "wall_s": round(wall, 1), "cost_usd": round(c, 6)}
+        with open(os.path.join(config.MDIR, "usage.jsonl"), "a") as f:
+            f.write(json.dumps(rec) + "\n")
+    if cost["agent"] > MAX_COST["agent"]:
+        print(f"!!! COST CAP: agent ${cost['agent']:.2f} > ${MAX_COST['agent']:.2f}, stopping safely")
+        print_summary()
+        sys.exit(2)

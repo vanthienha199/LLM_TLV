@@ -34,6 +34,7 @@ def load_order():
 MAX_COST = {
     "deepseek": float(os.environ.get("MM_MAX_COST_DEEPSEEK", "2.0")),
     "claude": float(os.environ.get("MM_MAX_COST_CLAUDE", "5.0")),
+    "agent": float(os.environ.get("MM_MAX_COST_AGENT", "5.0")),
 }
 DEEPSEEK_MAX_TOKENS = int(os.environ.get("MM_DEEPSEEK_MAX_TOKENS", "16000"))
 MODEL_NAME = {"deepseek": "deepseek-v4-flash", "claude": "claude-sonnet-4-6",
@@ -49,6 +50,16 @@ AGENT_CMD = os.environ.get("MM_AGENT_CMD", "claude")
 AGENT_MODEL = os.environ.get("MM_AGENT_MODEL", "sonnet")
 AGENT_MAX_TURNS = int(os.environ.get("MM_AGENT_MAX_TURNS", "40"))
 AGENT_TIMEOUT = int(os.environ.get("MM_AGENT_TIMEOUT", "900"))
+# Agent fallback (Steve Oct 20: raw calls first, then let an agent work on it
+# and discover the reference data itself). MM_AGENT_REFS lists directories the
+# agent may read and search (default: this repo's instructions/); empty
+# string turns it off. MM_AGENT_KEY_FILE runs the agent on that API key
+# instead of the logged-in subscription, and MM_AGENT_MAX_BUDGET caps the
+# spend of one agent invocation (claude --max-budget-usd).
+_refs = os.environ.get("MM_AGENT_REFS", os.path.join(CONVERSION_DIR, "instructions"))
+AGENT_REFS = [os.path.abspath(x.strip()) for x in _refs.split(",") if x.strip()]
+AGENT_KEY_FILE = os.environ.get("MM_AGENT_KEY_FILE", "")
+AGENT_MAX_BUDGET = os.environ.get("MM_AGENT_MAX_BUDGET", "")
 
 SERV_DIR = os.environ.get("MM_SERV_DIR", os.path.abspath("serv"))
 # The LLM_TLV checkout mounted into the container is, by default, the repo
