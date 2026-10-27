@@ -183,7 +183,9 @@ def main():
                                     f"creating new files matching '{ACCEPT_GLOB}', and none exist yet. "
                                     f"Create the required files.")
                         continue
-                    if pidx + 1 < len(PROVIDERS):
+                    # The cross-check is a raw API call, so an agent next in line
+                    # cannot do it: treat NO_CHANGE as from the last raw provider.
+                    if pidx + 1 < len(PROVIDERS) and PROVIDERS[pidx + 1][0] != "agent":
                         checker = PROVIDERS[pidx + 1][0]
                         print(f"  [{provider} #{a}] NO_CHANGE (${c:.4f}) -> cross-check by {checker}")
                         vresp, vu = call_with_retry(checker, build_user(task, feedback))

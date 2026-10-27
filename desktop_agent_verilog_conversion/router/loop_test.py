@@ -230,6 +230,30 @@ def _():
     assert providers.parse_agent_output("plain text") == ("plain text", 0.0, {})
 
 
+@case("fallback: NO_CHANGE before an agent is not cross-checked through the raw API")
+def _():
+    with tempfile.TemporaryDirectory() as mdir:
+        _agent_fallback_module(mdir)
+        calls = []
+
+        def fake_call(provider, user, tries=8, system=None):
+            calls.append(provider)
+            if provider != "deepseek":
+                raise AssertionError("raw API call for " + provider)
+            return "NO_CHANGE", dict(FULL_USAGE)
+
+        saved = (runner.PROVIDERS, runner.call_with_retry)
+        runner.PROVIDERS = [("deepseek", 3), ("agent", 1)]
+        runner.call_with_retry = fake_call
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                runner.main()
+        finally:
+            runner.PROVIDERS, runner.call_with_retry = saved
+        assert calls == ["deepseek"], calls
+        assert accounting.stats[-1] == ("Task A", "deepseek (no-change)"), accounting.stats
+
+
 def main():
     fails = 0
     for name, fn in CASES:
