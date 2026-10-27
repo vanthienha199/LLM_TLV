@@ -202,6 +202,7 @@ The implementation lives in `lib/`, one concern per module:
 | MM_AGENT_REFS | router's ../instructions | comma list of reference dirs the agent may search and read (passed as --add-dir, listed in its prompt); empty turns it off |
 | MM_AGENT_KEY_FILE | (off: subscription) | run the agent on this Anthropic API key instead of the logged-in subscription |
 | MM_AGENT_MAX_BUDGET / MM_MAX_COST_AGENT | (none) / 5.0 | USD cap per agent invocation (claude --max-budget-usd) / per run |
+| MM_AGENT_EXTRA_ARGS | (none) | extra agent CLI args, whitespace separated (e.g. `--bare`, much cheaper per call on an API key) |
 
 ## Agent worker mode
 

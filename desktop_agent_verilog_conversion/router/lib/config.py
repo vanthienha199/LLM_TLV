@@ -60,6 +60,10 @@ _refs = os.environ.get("MM_AGENT_REFS", os.path.join(CONVERSION_DIR, "instructio
 AGENT_REFS = [os.path.abspath(x.strip()) for x in _refs.split(",") if x.strip()]
 AGENT_KEY_FILE = os.environ.get("MM_AGENT_KEY_FILE", "")
 AGENT_MAX_BUDGET = os.environ.get("MM_AGENT_MAX_BUDGET", "")
+# Extra CLI arguments for the agent, whitespace separated (e.g. "--bare",
+# which skips hooks, plugins and CLAUDE.md discovery and makes each call far
+# cheaper on an API key).
+AGENT_EXTRA_ARGS = os.environ.get("MM_AGENT_EXTRA_ARGS", "").split()
 
 SERV_DIR = os.environ.get("MM_SERV_DIR", os.path.abspath("serv"))
 # The LLM_TLV checkout mounted into the container is, by default, the repo

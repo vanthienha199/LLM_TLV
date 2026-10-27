@@ -123,7 +123,7 @@ def _agent_prompt(task_text, feedback):
 
 
 def agent_argv():
-    argv = [config.AGENT_CMD, "-p", "--model", config.AGENT_MODEL,
+    argv = [config.AGENT_CMD, "-p", *config.AGENT_EXTRA_ARGS, "--model", config.AGENT_MODEL,
             "--max-turns", str(config.AGENT_MAX_TURNS),
             "--output-format", "json",
             "--permission-mode", "acceptEdits",

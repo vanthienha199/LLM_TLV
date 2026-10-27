@@ -202,7 +202,8 @@ def _():
         key = os.path.join(d, "key")
         with open(key, "w") as f:
             f.write("sk-test\n")
-        saved = (config.AGENT_REFS, config.AGENT_KEY_FILE, config.AGENT_MAX_BUDGET)
+        saved = (config.AGENT_REFS, config.AGENT_KEY_FILE, config.AGENT_MAX_BUDGET, config.AGENT_EXTRA_ARGS)
+        config.AGENT_EXTRA_ARGS = ["--bare"]
         config.AGENT_REFS = [d, os.path.join(d, "missing")]
         config.AGENT_KEY_FILE = key
         config.AGENT_MAX_BUDGET = "0.4"
@@ -211,6 +212,7 @@ def _():
             assert argv[argv.index("--add-dir") + 1] == d and argv.count("--add-dir") == 1, argv
             assert argv[argv.index("--max-budget-usd") + 1] == "0.4", argv
             assert argv[argv.index("--output-format") + 1] == "json", argv
+            assert argv[2] == "--bare", argv
             assert providers.agent_env()["ANTHROPIC_API_KEY"] == "sk-test"
             p = providers._agent_prompt("Do X.", "FEV FAILED")
             assert "- " + d + "\n" in p and "missing" not in p, p
@@ -220,7 +222,7 @@ def _():
             assert "ANTHROPIC_API_KEY" not in providers.agent_env()
             os.environ.pop("ANTHROPIC_API_KEY")
         finally:
-            config.AGENT_REFS, config.AGENT_KEY_FILE, config.AGENT_MAX_BUDGET = saved
+            config.AGENT_REFS, config.AGENT_KEY_FILE, config.AGENT_MAX_BUDGET, config.AGENT_EXTRA_ARGS = saved
     out = json.dumps({"result": "Edited wip.tlv.", "total_cost_usd": 0.21, "num_turns": 7,
                       "subtype": "success", "usage": {"input_tokens": 5, "output_tokens": 900}})
     report, c, info = providers.parse_agent_output(out)
